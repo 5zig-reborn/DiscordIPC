@@ -19,12 +19,11 @@ package com.jagrosh.discordipc.entities.pipe;
 import com.jagrosh.discordipc.IPCClient;
 import com.jagrosh.discordipc.entities.Callback;
 import com.jagrosh.discordipc.entities.Packet;
-import org.json.JSONException;
-import org.json.JSONObject;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 import org.newsclub.net.unix.AFUNIXSocket;
 import org.newsclub.net.unix.AFUNIXSocketAddress;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -35,7 +34,7 @@ import java.util.HashMap;
 public class UnixPipe extends Pipe
 {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(UnixPipe.class);
+
     private final AFUNIXSocket socket;
 
     UnixPipe(IPCClient ipcClient, HashMap<String, Callback> callbacks, String location) throws IOException
@@ -48,8 +47,7 @@ public class UnixPipe extends Pipe
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
     @Override
-    public Packet read() throws IOException, JSONException
-    {
+    public Packet read() throws IOException, ParseException {
         InputStream is = socket.getInputStream();
 
         while(is.available() == 0 && status == PipeStatus.CONNECTED)
@@ -80,8 +78,8 @@ public class UnixPipe extends Pipe
         d = new byte[Integer.reverseBytes(bb.getInt())];
 
         is.read(d);
-        Packet p = new Packet(op, new JSONObject(new String(d)));
-        LOGGER.debug(String.format("Received packet: %s", p.toString()));
+        Packet p = new Packet(op, (JSONObject)new JSONParser().parse(new String(d)));
+
         if(listener != null)
             listener.onPacketReceived(ipcClient, p);
         return p;
@@ -96,7 +94,7 @@ public class UnixPipe extends Pipe
     @Override
     public void close() throws IOException
     {
-        LOGGER.debug("Closing IPC pipe...");
+
         send(Packet.OpCode.CLOSE, new JSONObject(), null);
         status = PipeStatus.CLOSED;
         socket.close();

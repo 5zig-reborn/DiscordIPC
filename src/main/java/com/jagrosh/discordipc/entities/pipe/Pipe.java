@@ -21,11 +21,10 @@ import com.jagrosh.discordipc.IPCListener;
 import com.jagrosh.discordipc.entities.Callback;
 import com.jagrosh.discordipc.entities.DiscordBuild;
 import com.jagrosh.discordipc.entities.Packet;
+import com.jagrosh.discordipc.entities.User;
 import com.jagrosh.discordipc.exceptions.NoDiscordClientException;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.ParseException;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -33,11 +32,12 @@ import java.util.UUID;
 
 public abstract class Pipe {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(Pipe.class);
+
     private static final int VERSION = 1;
     PipeStatus status = PipeStatus.CONNECTING;
     IPCListener listener;
     private DiscordBuild build;
+    public User user;
     final IPCClient ipcClient;
     private final HashMap<String,Callback> callbacks;
 
@@ -63,22 +63,36 @@ public abstract class Pipe {
             try
             {
                 String location = getPipeLocation(i);
-                LOGGER.debug(String.format("Searching for IPC: %s", location));
+
                 pipe = createPipe(ipcClient, callbacks, location);
 
-                pipe.send(Packet.OpCode.HANDSHAKE, new JSONObject().put("v", VERSION).put("client_id", Long.toString(clientId)), null);
+                JSONObject j = new JSONObject();
+                j.put("v", VERSION);
+                j.put("client_id", Long.toString(clientId));
+
+                pipe.send(Packet.OpCode.HANDSHAKE, j , null);
 
                 Packet p = pipe.read(); // this is a valid client at this point
 
-                pipe.build = DiscordBuild.from(p.getJson().getJSONObject("data")
-                        .getJSONObject("config")
-                        .getString("api_endpoint"));
+                pipe.build = DiscordBuild.from((String)((JSONObject)((JSONObject)p.getJson().get("data"))
+                        .get("config"))
+                        .get("api_endpoint"));
 
-                LOGGER.debug(String.format("Found a valid client (%s) with packet: %s", pipe.build.name(), p.toString()));
+
+                JSONObject u1 = (JSONObject) ((JSONObject)p.getJson().get("data")).get("user");
+                pipe.user = new User(
+                        (String) u1.get("username"),
+                        (String) u1.get("discriminator"),
+                        Long.parseLong((String)u1.get("id")),
+                        (String) u1.getOrDefault("avatar", null)
+                );
+
+
+
                 // we're done if we found our first choice
                 if(pipe.build == preferredOrder[0] || DiscordBuild.ANY == preferredOrder[0])
                 {
-                    LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
+
                     break;
                 }
 
@@ -88,7 +102,7 @@ public abstract class Pipe {
                 pipe.build = null;
                 pipe = null;
             }
-            catch(IOException | JSONException ex)
+            catch(Exception ex)
             {
                 pipe = null;
             }
@@ -101,7 +115,7 @@ public abstract class Pipe {
             for(int i = 1; i < preferredOrder.length; i++)
             {
                 DiscordBuild cb = preferredOrder[i];
-                LOGGER.debug(String.format("Looking for client build: %s", cb.name()));
+
                 if(open[cb.ordinal()] != null)
                 {
                     pipe = open[cb.ordinal()];
@@ -119,7 +133,7 @@ public abstract class Pipe {
                     }
                     else pipe.build = cb;
 
-                    LOGGER.info(String.format("Found preferred client: %s", pipe.build.name()));
+
                     break;
                 }
             }
@@ -140,7 +154,7 @@ public abstract class Pipe {
                 } catch(IOException ex) {
                     // This isn't really important to applications and better
                     // as debug info
-                    LOGGER.debug("Failed to close an open IPC pipe!", ex);
+
                 }
             }
         }
@@ -185,17 +199,20 @@ public abstract class Pipe {
         try
         {
             String nonce = generateNonce();
-            Packet p = new Packet(op, data.put("nonce",nonce));
+            JSONObject data2 = new JSONObject();
+            data2.putAll(data);
+            data2.put("nonce",nonce);
+            Packet p = new Packet(op, data2);
             if(callback!=null && !callback.isEmpty())
                 callbacks.put(nonce, callback);
             write(p.toBytes());
-            LOGGER.debug(String.format("Sent packet: %s", p.toString()));
+
             if(listener != null)
                 listener.onPacketSent(ipcClient, p);
         }
         catch(IOException ex)
         {
-            LOGGER.error("Encountered an IOException while sending a packet and disconnected!");
+
             status = PipeStatus.DISCONNECTED;
         }
     }
@@ -208,10 +225,8 @@ public abstract class Pipe {
      *
      * @throws IOException
      *         If the pipe breaks.
-     * @throws JSONException
-     *         If the read thread receives bad data.
      */
-    public abstract Packet read() throws IOException, JSONException;
+    public abstract Packet read() throws IOException, ParseException;
 
     public abstract void write(byte[] b) throws IOException;
 

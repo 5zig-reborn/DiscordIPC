@@ -17,7 +17,7 @@ package com.jagrosh.discordipc;
 
 import com.jagrosh.discordipc.entities.Packet;
 import com.jagrosh.discordipc.entities.User;
-import org.json.JSONObject;
+import org.json.simple.JSONObject;
 
 /**
  * An implementable listener used to handle events caught by an {@link IPCClient}.<p>
@@ -80,7 +80,9 @@ public interface IPCListener
      *
      * @param client The now ready IPCClient.
      */
-    default void onReady(IPCClient client) {}
+    default void onReady(IPCClient client, User user) {}
+
+
 
     /**
      * Fired whenever an {@link IPCClient} has closed.

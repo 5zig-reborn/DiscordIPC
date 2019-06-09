@@ -15,9 +15,10 @@
  */
 package com.jagrosh.discordipc.entities;
 
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+
 import java.time.OffsetDateTime;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /**
  * An encapsulation of all data needed to properly construct a JSON RichPresence payload.
@@ -77,25 +78,51 @@ public class RichPresence
      */
     public JSONObject toJson()
     {
-        return new JSONObject()
-                .put("state", state)
-                .put("details", details)
-                .put("timestamps", new JSONObject()
-                        .put("start", startTimestamp==null ? null : startTimestamp.toEpochSecond())
-                        .put("end", endTimestamp==null ? null : endTimestamp.toEpochSecond()))
-                .put("assets", new JSONObject()
-                        .put("large_image", largeImageKey)
-                        .put("large_text", largeImageText)
-                        .put("small_image", smallImageKey)
-                        .put("small_text", smallImageText))
-                .put("party", partyId==null ? null : new JSONObject()
-                        .put("id", partyId)
-                        .put("size", new JSONArray().put(partySize).put(partyMax)))
-                .put("secrets", new JSONObject()
-                        .put("join", joinSecret)
-                        .put("spectate", spectateSecret)
-                        .put("match", matchSecret))
-                .put("instance", instance);
+        JSONObject j = new JSONObject();
+        JSONObject t = new JSONObject();
+        JSONObject p = new JSONObject();
+        JSONObject a = new JSONObject();
+        JSONObject s = new JSONObject();
+
+        t.put("start", startTimestamp==null ? null : startTimestamp.toEpochSecond());
+        if(endTimestamp != null)
+        t.put("end", endTimestamp.toEpochSecond());
+
+        a.put("large_image", largeImageKey);
+        if(largeImageText != null)
+        a.put("large_text", largeImageText);
+        if(smallImageKey != null)
+        a.put("small_image", smallImageKey);
+        if(smallImageText != null)
+        a.put("small_text", smallImageText);
+
+        j.put("state", state);
+        j.put("details", details);
+        j.put("timestamps", t);
+        j.put("assets", a);
+
+        p.put("id", partyId);
+        JSONArray arr = new JSONArray();
+        arr.add(partySize);
+        arr.add(partyMax);
+        p.put("size", arr);
+
+
+        if(partyId != null)
+        j.put("party", p);
+
+        if(joinSecret != null)
+        s.put("join", joinSecret);
+        if(spectateSecret != null)
+        s.put("spectate", spectateSecret);
+        if(matchSecret != null)
+        s.put("match", matchSecret);
+        j.put("secrets", s);
+
+        j.put("instance", instance);
+
+
+        return j;
     }
 
     /**

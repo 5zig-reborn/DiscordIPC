@@ -19,10 +19,9 @@ package com.jagrosh.discordipc.entities.pipe;
 import com.jagrosh.discordipc.IPCClient;
 import com.jagrosh.discordipc.entities.Callback;
 import com.jagrosh.discordipc.entities.Packet;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -32,7 +31,7 @@ import java.util.HashMap;
 public class WindowsPipe extends Pipe
 {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(WindowsPipe.class);
+
 
     private final RandomAccessFile file;
 
@@ -52,7 +51,7 @@ public class WindowsPipe extends Pipe
     }
 
     @Override
-    public Packet read() throws IOException, JSONException {
+    public Packet read() throws IOException, ParseException {
         while(file.length() == 0 && status == PipeStatus.CONNECTED)
         {
             try {
@@ -71,8 +70,8 @@ public class WindowsPipe extends Pipe
         byte[] d = new byte[len];
 
         file.readFully(d);
-        Packet p = new Packet(op, new JSONObject(new String(d)));
-        LOGGER.debug(String.format("Received packet: %s", p.toString()));
+        Packet p = new Packet(op, (JSONObject)new JSONParser().parse(new String(d)));
+
         if(listener != null)
             listener.onPacketReceived(ipcClient, p);
         return p;
@@ -80,7 +79,7 @@ public class WindowsPipe extends Pipe
 
     @Override
     public void close() throws IOException {
-        LOGGER.debug("Closing IPC pipe...");
+
         send(Packet.OpCode.CLOSE, new JSONObject(), null);
         status = PipeStatus.CLOSED;
         file.close();

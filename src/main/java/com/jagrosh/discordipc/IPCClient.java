@@ -20,10 +20,8 @@ import com.jagrosh.discordipc.entities.Packet.OpCode;
 import com.jagrosh.discordipc.entities.pipe.Pipe;
 import com.jagrosh.discordipc.entities.pipe.PipeStatus;
 import com.jagrosh.discordipc.exceptions.NoDiscordClientException;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.ParseException;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -55,7 +53,7 @@ import java.util.HashMap;
  */
 public final class IPCClient implements Closeable
 {
-    private static final Logger LOGGER = LoggerFactory.getLogger(IPCClient.class);
+
     private final long clientId;
     private final HashMap<String,Callback> callbacks = new HashMap<>();
     private volatile Pipe pipe;
@@ -110,14 +108,17 @@ public final class IPCClient implements Closeable
     public void connect(DiscordBuild... preferredOrder) throws NoDiscordClientException
     {
         checkConnected(false);
+
         callbacks.clear();
         pipe = null;
 
         pipe = Pipe.openPipe(this, clientId, callbacks, preferredOrder);
 
-        LOGGER.debug("Client is now connected and ready!");
+
+
         if(listener != null)
-            listener.onReady(this);
+            listener.onReady(this, pipe.user);
+
         startReading();
     }
     
@@ -164,12 +165,33 @@ public final class IPCClient implements Closeable
     public void sendRichPresence(RichPresence presence, Callback callback)
     {
         checkConnected(true);
-        LOGGER.debug("Sending RichPresence to discord: "+(presence == null ? null : presence.toJson().toString()));
-        pipe.send(OpCode.FRAME, new JSONObject()
-                            .put("cmd","SET_ACTIVITY")
-                            .put("args", new JSONObject()
-                                        .put("pid",getPID())
-                                        .put("activity",presence == null ? null : presence.toJson())), callback);
+
+        JSONObject j = new JSONObject();
+        JSONObject j2 = new JSONObject();
+        JSONObject presenceJ = presence == null ? null : presence.toJson();
+        j2.put("activity", presenceJ);
+        j2.put("pid",getPID());
+        j.put("cmd", "SET_ACTIVITY");
+        j.put("args", j2);
+
+
+        pipe.send(OpCode.FRAME, j , callback);
+    }
+
+    public void sendResult(int result, String userId) {
+        checkConnected(true);
+
+        JSONObject outer = new JSONObject();
+
+        // https://github.com/discordapp/discord-rpc/blob/master/src/serialization.cpp#L230
+        outer.put("cmd", result == 0 ? "SEND_ACTIVITY_JOIN_INVITE" : "CLOSE_ACTIVITY_JOIN_REQUEST");
+
+        JSONObject args = new JSONObject();
+        args.put("user_id", userId);
+
+        outer.put("args", args);
+
+        pipe.send(OpCode.FRAME, outer, null);
     }
 
     /**
@@ -211,10 +233,11 @@ public final class IPCClient implements Closeable
         checkConnected(true);
         if(!sub.isSubscribable())
             throw new IllegalStateException("Cannot subscribe to "+sub+" event!");
-        LOGGER.debug(String.format("Subscribing to Event: %s", sub.name()));
-        pipe.send(OpCode.FRAME, new JSONObject()
-                            .put("cmd", "SUBSCRIBE")
-                            .put("evt", sub.name()), callback);
+
+        JSONObject j = new JSONObject();
+        j.put("cmd", "SUBSCRIBE");
+        j.put("evt", sub.name());
+        pipe.send(OpCode.FRAME, j, callback);
     }
 
     /**
@@ -245,7 +268,7 @@ public final class IPCClient implements Closeable
         try {
             pipe.close();
         } catch (IOException e) {
-            LOGGER.debug("Failed to close pipe", e);
+
         }
     }
 
@@ -350,67 +373,69 @@ public final class IPCClient implements Closeable
                 while((p = pipe.read()).getOp() != OpCode.CLOSE)
                 {
                     JSONObject json = p.getJson();
-                    Event event = Event.of(json.optString("evt", null));
-                    String nonce = json.optString("nonce", null);
+                    Event event = Event.of((String)json.getOrDefault("evt", null));
+                    String nonce = (String) json.getOrDefault("nonce", null);
+
                     switch(event)
                     {
                         case NULL:
                             if(nonce != null && callbacks.containsKey(nonce))
                                 callbacks.remove(nonce).succeed(p);
                             break;
-                            
+
                         case ERROR:
                             if(nonce != null && callbacks.containsKey(nonce))
-                                callbacks.remove(nonce).fail(json.getJSONObject("data").optString("message", null));
+                                callbacks.remove(nonce).fail((String)((JSONObject)json.get("data")).getOrDefault("message", null));
                             break;
                             
                         case ACTIVITY_JOIN:
-                            LOGGER.debug("Reading thread received a 'join' event.");
+
                             break;
                             
                         case ACTIVITY_SPECTATE:
-                            LOGGER.debug("Reading thread received a 'spectate' event.");
+
                             break;
                             
                         case ACTIVITY_JOIN_REQUEST:
-                            LOGGER.debug("Reading thread received a 'join request' event.");
+
                             break;
                             
                         case UNKNOWN:
-                            LOGGER.debug("Reading thread encountered an event with an unknown type: " +
-                                         json.getString("evt"));
+
                             break;
                     }
-                    if(listener != null && json.has("cmd") && json.getString("cmd").equals("DISPATCH"))
+                    if(listener != null && json.containsKey("cmd") && ((String)json.get("cmd")).equals("DISPATCH"))
                     {
                         try
                         {
-                            JSONObject data = json.getJSONObject("data");
-                            switch(Event.of(json.getString("evt")))
+                            JSONObject data =(JSONObject) json.get("data");
+                            switch(Event.of((String)json.get("evt")))
                             {
+
+
                                 case ACTIVITY_JOIN:
-                                    listener.onActivityJoin(this, data.getString("secret"));
+                                    listener.onActivityJoin(this, (String)data.get("secret"));
                                     break;
                                     
                                 case ACTIVITY_SPECTATE:
-                                    listener.onActivitySpectate(this, data.getString("secret"));
+                                    listener.onActivitySpectate(this, (String) data.get("secret"));
                                     break;
                                     
                                 case ACTIVITY_JOIN_REQUEST:
-                                    JSONObject u = data.getJSONObject("user");
+                                    JSONObject u = (JSONObject) data.get("user");
                                     User user = new User(
-                                        u.getString("username"),
-                                        u.getString("discriminator"),
-                                        Long.parseLong(u.getString("id")),
-                                        u.optString("avatar", null)
+                                            (String) u.get("username"),
+                                            (String) u.get("discriminator"),
+                                        Long.parseLong((String)u.get("id")),
+                                            (String) u.getOrDefault("avatar", null)
                                     );
-                                    listener.onActivityJoinRequest(this, data.optString("secret", null), user);
+                                    listener.onActivityJoinRequest(this, (String) data.getOrDefault("secret", null), user);
                                     break;
                             }
                         }
                         catch(Exception e)
                         {
-                            LOGGER.error("Exception when handling event: ", e);
+                            e.printStackTrace();
                         }
                     }
                 }
@@ -418,20 +443,17 @@ public final class IPCClient implements Closeable
                 if(listener != null)
                     listener.onClose(this, p.getJson());
             }
-            catch(IOException | JSONException ex)
-            {
-                if(ex instanceof IOException)
-                    LOGGER.error("Reading thread encountered an IOException", ex);
-                else
-                    LOGGER.error("Reading thread encountered an JSONException", ex);
+            catch(IOException | ParseException ex) {
+                ex.printStackTrace();
 
                 pipe.setStatus(PipeStatus.DISCONNECTED);
-                if(listener != null)
+                if (listener != null)
                     listener.onDisconnect(this, ex);
             }
+
         });
 
-        LOGGER.debug("Starting IPCClient reading thread!");
+
         readThread.start();
     }
     
